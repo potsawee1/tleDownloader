@@ -9,6 +9,8 @@
 #include <QNetworkReply>
 #include <QFile>
 #include <QSqlQuery>
+#include <QDate>
+#include <QTimer>
 
 namespace Ui {
 class TLEDownloader;
@@ -28,9 +30,12 @@ public slots:
     int receiveTLEData(QString tleData);
     int insertTLE(QStringList tleData);
     void selectDATA();
+    void save_time_process(QDateTime start,QDateTime end,int process);
+    void test_timer();
 
 private:
     int tleType;
+    int processType;
     QStringList results;
 
     QNetworkAccessManager *manager;
@@ -40,7 +45,6 @@ private:
     QVector<QString> lineCDMAll;
 
     QSqlDatabase db;
-
     Ui::TLEDownloader *ui;
 };
 

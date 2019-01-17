@@ -1,5 +1,6 @@
 #include "tledownloader.h"
 #include "ui_tledownloader.h"
+#include <iomanip>
 
 TLEDownloader::TLEDownloader(QWidget *parent) :
     QMainWindow(parent),
@@ -10,8 +11,12 @@ TLEDownloader::TLEDownloader(QWidget *parent) :
     db = QSqlDatabase::addDatabase("QMYSQL");
     db.setHostName("localhost");
     db.setPort(3306);
-    db.setDatabaseName("space_object"); qDebug() << "1 table";
-    //db.setDatabaseName("separate_space_object"); qDebug() << "multiple table";
+     this->processType = 3; // set process 1 one table/2 seperate table/3 day by day table
+
+    if(this->processType == 1) {db.setDatabaseName("space_object"); qDebug() << "1 table";}
+    else if(this->processType == 2){ db.setDatabaseName("separate_space_object"); qDebug() << "multiple table";}
+    else if(this->processType == 3){ db.setDatabaseName("dbd_space_object"); qDebug() << "day by day table";}
+
     db.setUserName("root");
     db.setPassword("root");
     bool ok = db.open();
@@ -24,7 +29,11 @@ TLEDownloader::TLEDownloader(QWidget *parent) :
 //    this->insertTLE(test);
 //    //-- end test zone
 
-    this->getTLEData(0); //full = 0; LEO = 1
+     this->getTLEData(0); //full = 0; LEO = 1
+
+//      QTimer *timer = new QTimer(this);
+//      connect(timer, SIGNAL(timeout()), this, SLOT(test_timer()));
+//      timer->start(1800000);
 }
 
 TLEDownloader::~TLEDownloader()
@@ -44,14 +53,18 @@ void TLEDownloader::replyFinished(QNetworkReply *reply)
     if(statusCode == 200)
     {
         QStringList text = info.split("\r\n", QString::SkipEmptyParts);
-        qDebug() << "start" << QDateTime::currentDateTimeUtc().toString("dd/MM/yyyy HH:mm:ss.zzz");
+        QDateTime start =  QDateTime::currentDateTimeUtc();
+        qDebug() << "start" << start;
         for(int i = 0; i < text.size(); i++){
             //get line1 and line2 and send to getTLEData function
             this->receiveTLEData(text[i]);
         }
 
-        db.close();
-        qDebug() << "end" << QDateTime::currentDateTimeUtc().toString("dd/MM/yyyy HH:mm:ss.zzz");
+        //db.close();
+        QDateTime end =  QDateTime::currentDateTimeUtc();
+        qDebug() << "end" << end;
+        this->save_time_process(start,end,this->processType); // save time
+
         QString filename="D:/tle_full.txt";
         if(this->tleType == 0){
             filename = "C:/FDS_Operation/thaichotelive/TLE/tle_full_"+QDate::currentDate().toString("yyyyMMdd")+".txt";
@@ -154,21 +167,21 @@ int TLEDownloader::insertTLE(QStringList tleData)
         strQuery += "SET @plaunch_year = '" + tleData[2] + "';";
     }else{
         strQuery += "SET @plaunch_year = NULL;"; //use for space_object table
-        //strQuery += "SET @plaunch_year = '-';"; //use for separate_space_object table
+        if(this->processType == 2) strQuery += "SET @plaunch_year = '-';"; //use for separate_space_object table
     }
 
     if(tleData[3] != ""){
         strQuery += "SET @plaunch_no = '" + tleData[3] + "';";
     }else{
         strQuery += "SET @plaunch_no = NULL;"; //use for space_object table
-        //strQuery += "SET @plaunch_no = '-';"; //use for separate_space_object table
+        if(this->processType == 2) strQuery += "SET @plaunch_no = '-';"; //use for separate_space_object table
     }
 
     if(tleData[4] != ""){
         strQuery += "SET @ppiece_launch = '" + tleData[4] + "';";
     }else{
         strQuery += "SET @ppiece_launch = NULL;"; //use for space_object table
-        //strQuery += "SET @ppiece_launch = '-';"; //use for separate_space_object table
+        if(this->processType == 2) strQuery += "SET @ppiece_launch = '-';"; //use for separate_space_object table
     }
 
     strQuery += "SET @pepoch_year = '" + tleData[5] + "';";
@@ -187,8 +200,9 @@ int TLEDownloader::insertTLE(QStringList tleData)
     strQuery += "SET @pmean_motion = " + tleData[19] + ";";
     strQuery += "SET @prev_no = " + tleData[20] + ";";
     strQuery += "SET @pchecksum_line2 = " + tleData[21] + ";";
-    //strQuery += "CALL manage_TLE_data(@psat_no, @pclassification,@plaunch_year,@plaunch_no,@ppiece_launch,@pepoch_year,@pepoch_doy,";
-    strQuery += "CALL insertTLE(@psat_no, @pclassification,@plaunch_year,@plaunch_no,@ppiece_launch,@pepoch_year,@pepoch_doy,";
+    if(this->processType == 1) strQuery += "CALL insertTLE(@psat_no, @pclassification,@plaunch_year,@plaunch_no,@ppiece_launch,@pepoch_year,@pepoch_doy,";
+    else if(this->processType == 2) strQuery += "CALL manage_TLE_data(@psat_no, @pclassification,@plaunch_year,@plaunch_no,@ppiece_launch,@pepoch_year,@pepoch_doy,";
+    else if(this->processType == 3) strQuery += "CALL dbdTLEUpdate(@psat_no, @pclassification,@plaunch_year,@plaunch_no,@ppiece_launch,@pepoch_year,@pepoch_doy,";
     strQuery += "@p1st_mean_motion,@p2nd_mean_motion,@pbstar,@pephe_type,@pelement_no,@pchecksum_line1,@pinclination,";
     strQuery += "@pRAAN,@peccentricity,@parg_of_perigee,@pmean_anomaly,@pmean_motion,@prev_no,@pchecksum_line2, @pResult);";
 
@@ -215,4 +229,20 @@ void TLEDownloader::selectDATA()
                           << query.value(13).toString() << query.value(14).toString() << query.value(15).toString() << query.value(16).toString();
         qDebug() << "end" << QDateTime::currentDateTimeUtc().toString("dd/MM/yyyy HH:mm:ss.zzz");
     }
+}
+
+void TLEDownloader::save_time_process(QDateTime start,QDateTime end,int process)
+{
+    QSqlQuery query;
+    query.prepare("INSERT INTO report (process, start, end) "
+                  "VALUES (?, ?, ?)");
+    query.addBindValue(process);
+    query.addBindValue(start);
+    query.addBindValue(end);
+    query.exec();
+}
+
+void TLEDownloader::test_timer()
+{
+    this->getTLEData(0);
 }
